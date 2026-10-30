@@ -1,17 +1,17 @@
-# 变体打包清单：供通用打包脚本（docker-build/.github/workflows/projects.yml）读取。
-# 每行一个变体：<tag前缀>|<该前缀要安装的 apt 工具列表（空格分隔）>|<npm 全局包列表（可选，空格分隔）>|<uv 安装标记（1=装/空=不装）>
-# 打包脚本会为每个变体构建并推送 4 个 tag：
-#   <镜像>:<前缀>-<版本号> / <镜像>:<前缀>-latest（Docker Hub 与 GHCR 各一组）
-# 构建时传 --build-arg DEV_TOOLS=<前缀>，Dockerfile 依据前缀从本文件读取：
-#   第二列 → apt-get install；第三列 → npm install -g（如 pnpm，dsh-market 插件市场依赖）；
-#   第四列 = 1 → 官方 install.sh 安装 uv（Python 包管理器，MCP 的 uvx/uv run 启动方式依赖）
-# 需要增删工具时，直接编辑下面各行即可，无需改动打包脚本和 Dockerfile。
-# 特殊前缀 test：除安装下列工具外，Dockerfile 还会在 DSH 安装完毕后额外安装
-# dsh 插件（dsh plugin --profile web add github:smanx/dsh-conversation-indicator#main）。
+# Variant build manifest: read by the generic build script (docker-build/.github/workflows/projects.yml).
+# One variant per line: <tag prefix>|<apt tool list to install for this prefix (space-separated)>|<npm global package list (optional, space-separated)>|<uv install flag (1=install/empty=skip)>
+# The build script builds and pushes 4 tags per variant:
+#   <image>:<prefix>-<version> / <image>:<prefix>-latest (one pair each on Docker Hub and GHCR)
+# Pass --build-arg DEV_TOOLS=<prefix> at build time; the Dockerfile reads from this file by prefix:
+#   column 2 -> apt-get install; column 3 -> npm install -g (e.g. pnpm, required by the dsh-market plugin marketplace);
+#   column 4 = 1 -> install uv via the official install.sh (Python package manager, needed by MCP's uvx/uv run launch modes)
+# To add or remove tools, just edit the lines below; no changes to the build script or Dockerfile are needed.
+# Special prefix test: besides installing the tools below, the Dockerfile also installs an extra
+# dsh plugin after DSH is installed (dsh plugin --profile web add github:smanx/dsh-conversation-indicator#main).
 test|git curl wget nano jq procps ca-certificates unzip vim openssh-client zip htop tmux tree openssl python3 build-essential bash-completion|pnpm|1
 admin|git curl wget nano jq procps ca-certificates unzip vim openssh-client zip htop tmux tree openssl python3 build-essential bash-completion|pnpm|1
 devtools|git curl wget nano jq procps ca-certificates unzip vim openssh-client zip htop tmux tree openssl python3 build-essential bash-completion|pnpm|1
 devtools-min|git curl wget nano jq procps ca-certificates unzip|pnpm|1
-# admin 变体：默认预装最新 DSH（@next，随镜像打包，开箱即用），管理台仍可自选版本安装/切换、配置 npm 源。
-# 必须保留 python3/build-essential（管理台运行时安装其他版本 DSH 需编译原生模块 node-pty）；
-# 该变体运行入口为 manager 管理服务（entrypoint.sh 依据 /app/.admin-mode 标记分发）。
+# admin variant: preinstalls the latest DSH (@next, packaged with the image, works out of the box) by default; the admin console can still install/switch versions and configure the npm registry.
+# python3/build-essential must be kept (the admin console compiles the native module node-pty when installing other DSH versions at runtime);
+# this variant's runtime entry is the manager service (entrypoint.sh dispatches based on the /app/.admin-mode marker).

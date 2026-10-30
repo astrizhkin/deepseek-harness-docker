@@ -4,23 +4,23 @@ const crypto = require('crypto');
 const { serveIndex, injectIntoHead } = require('./upstream-token.js');
 const { attachBodyTransform } = require('./compression.js');
 
-// 源端口（DSH 监听端口，默认 3079）与代理端口（代理对外监听端口，默认 3080）。
-// 两者必须不同（同一端口只能被一个进程监听），均可通过环境变量覆盖：
-//   DSH_PORT=源端口（DSH）   PROXY_PORT=代理端口（对外）
+// Source port (the port DSH listens on, default 3079) and proxy port (the port the proxy listens on externally, default 3080).
+// They must be different (a single port can only be listened on by one process); both can be overridden via environment variables:
+//   DSH_PORT=source port (DSH)   PROXY_PORT=proxy port (external)
 const DSH_PORT = Number(process.env.DSH_PORT) || 3079;
 const LISTEN_PORT = Number(process.env.PROXY_PORT) || 3080;
 const TARGET_ORIGIN = `http://127.0.0.1:${DSH_PORT}`;
 const AUTH_REALM = 'dsh-proxy';
 
-// Basic Auth：用户名/密码通过环境变量设置。
-// 两个都设置了才启用认证；任一未设置则完全放行（不需要认证）。
+// Basic Auth: username/password are set via environment variables.
+// Auth is enabled only when both are set; if either is unset, requests pass through entirely (no auth required).
 const AUTH_USER = process.env.PROXY_USERNAME || '';
 const AUTH_PASS = process.env.PROXY_PASSWORD || '';
 
-// 公开静态资源白名单：只含应用名/图标等非敏感数据（PWA manifest、站点图标）。
-// 浏览器抓取 <link rel="manifest"> 时（标签未带 crossorigin="use-credentials"）
-// 不会携带 Basic Auth 凭据，若这些路径也强制认证，控制台会一直报
-// /manifest.webmanifest 401。因此对白名单路径跳过认证；页面、API、WS 仍全部要求认证。
+// Public static asset whitelist: contains only non-sensitive data such as the app name/icons (PWA manifest, site icons).
+// When the browser fetches <link rel="manifest"> (the tag does not carry crossorigin="use-credentials")
+// it does not send Basic Auth credentials; if these paths also required auth, the console would
+// constantly report /manifest.webmanifest 401. So authentication is skipped for whitelisted paths; pages, APIs, and WS still all require auth.
 const PUBLIC_PATHS = new Set(['/manifest.webmanifest', '/favicon.svg', '/favicon.ico']);
 
 function safeEqual(a, b) {
@@ -30,7 +30,7 @@ function safeEqual(a, b) {
 }
 
 function checkAuth(req) {
-  if (!AUTH_USER || !AUTH_PASS) return true; // 未配置 → 不需要认证
+  if (!AUTH_USER || !AUTH_PASS) return true; // not configured -> no auth required
   const m = /^Basic\s+(.+)$/i.exec(req.headers.authorization || '');
   if (!m) return false;
   let decoded;
@@ -62,36 +62,36 @@ const proxy = httpProxy.createProxyServer({
   changeOrigin: true,
 });
 
-// error 兜底：上游（DSH）不可达/崩溃时，http-proxy 默认无 error 监听会直接 throw
-// 未捕获异常导致整个代理进程挂死。这里统一接管所有转发错误：HTTP 请求回 502，
-// WS 升级直接销毁 socket，并打印错误便于排查（DSH 掉线不再表现为进程崩溃）。
+// error fallback: when the upstream (DSH) is unreachable/crashes, http-proxy with no error listener throws an
+// uncaught exception, killing the whole proxy process. Here all forwarding errors are handled uniformly: HTTP requests get a 502,
+// WS upgrades have their socket destroyed directly, and the error is printed for troubleshooting (DSH going offline no longer shows up as a process crash).
 proxy.on('error', (err, req, res) => {
-  console.error(`[proxy] 转发上游 ${TARGET_ORIGIN} 出错：${err.code || err.message}`, err.stack || '');
+  console.error(`[proxy] error forwarding to upstream ${TARGET_ORIGIN}: ${err.code || err.message}`, err.stack || '');
   if (res && res.writeHead) {
-    // 正常 HTTP 连接：尽可能回 502；若响应已写出则直接结束
+    // Normal HTTP connection: return 502 whenever possible; if the response has already been written, just end it
     if (res.headersSent) {
       res.end();
     } else {
       res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('502 Bad Gateway: 上游 DSH 不可达或已退出');
+      res.end('502 Bad Gateway: upstream DSH is unreachable or has exited');
     }
   } else if (res && res.destroy) {
-    // WS 升级：res 实为底层 socket，无 writeHead，直接销毁
+    // WS upgrade: res is actually the underlying socket, with no writeHead; destroy it directly
     res.destroy();
   }
 });
 
-// 核心修复：crypto.randomUUID polyfill。
-// DSH 前端用 crypto.randomUUID() 生成 rpcId，但该 API 只在 https/localhost
-// 等安全上下文可用；通过局域网 IP 访问时页面是非安全上下文，randomUUID
-// 不存在 → RPC 请求发不出去 → 实时通道(WS)建立失败。
-// 代理在转发 HTML 时注入基于 getRandomValues 的兼容实现（该 API 非安全源可用）。
+// Core fix: crypto.randomUUID polyfill.
+// The DSH frontend uses crypto.randomUUID() to generate rpcId, but that API is only available in secure
+// contexts such as https/localhost; when accessed via a LAN IP the page is a non-secure context and randomUUID
+// does not exist -> RPC requests cannot be sent -> the realtime channel (WS) fails to be established.
+// When forwarding HTML, the proxy injects a compatible implementation based on getRandomValues (that API works on non-secure origins).
 const POLYFILL = '<script>(function(){try{if(typeof crypto!=="undefined"&&crypto&&typeof crypto.randomUUID!=="function"){crypto.randomUUID=function(){var b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;var h="";for(var i=0;i<16;i++){h+=b[i].toString(16).padStart(2,"0")}return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20)}}}catch(e){}})();</script>';
 
-// DSH 前端用 connection.isLoopback 决定设置类功能是否可用（插件配置卡片、设置文件按钮等）：
-// 只有通过 localhost/127.0.0.1 等回环地址访问才为真，主机名/局域网访问时这些功能会被隐藏。
-// 本代理是对外访问的唯一入口，浏览器永远从非回环地址发起，因此把
-// `isLoopbackHostname(pageLocation.hostname)` 判定改写为恒真，让局域网访问同样能用设置功能。
+// The DSH frontend uses connection.isLoopback to decide whether settings-related features are available (plugin config cards, settings file buttons, etc.):
+// it is true only when accessed via a loopback address such as localhost/127.0.0.1; with hostname/LAN access these features are hidden.
+// This proxy is the only entry point for external access, and the browser always connects from a non-loopback address, so
+// the `isLoopbackHostname(pageLocation.hostname)` check is rewritten to always be true, letting LAN access use the settings features too.
 const LOOPBACK_JS_NEEDLE = 'isLoopbackHostname(pageLocation.hostname)';
 const LOOPBACK_JS_REPLACEMENT = 'true';
 
@@ -101,17 +101,17 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
   const isJs = ct.includes('javascript');
   if (!isHtml && !isJs) return;
 
-  // 兼容浏览器/上游的所有压缩形态（gzip / deflate / br，以及不压缩的 identity）：
-  // 缓冲整个响应体 → 按 Content-Encoding 解压成明文 → 完成 HTML/JS 改写 → 再按原编码
-  // 重压回传。这样无论上游是否开启压缩、压缩成哪种格式，下面的改写逻辑都能生效。
-  // （上一版做法是转发时剥离 Accept-Encoding 强制上游返回明文，这里不再依赖该前提）
+  // Handle every compression form from browsers/upstreams (gzip / deflate / br, plus uncompressed identity):
+  // buffer the whole response body -> decompress to plaintext per Content-Encoding -> finish the HTML/JS rewrites -> recompress
+  // with the original encoding. This way, regardless of whether the upstream compresses and in which format, the rewrite logic below still works.
+  // (The previous approach stripped Accept-Encoding when forwarding to force the upstream to return plaintext; that assumption is no longer relied on here)
   attachBodyTransform(res, proxyRes, plain => {
     const text = plain.toString('utf8');
     if (isHtml) {
-      // HTML：注入 crypto.randomUUID polyfill
+      // HTML: inject the crypto.randomUUID polyfill
       return Buffer.from(injectIntoHead(text, POLYFILL));
     }
-    // JS：仅当命中目标判定串时才改写（未命中返回 null → 原样透传，不做无谓重压）
+    // JS: rewrite only when the target check string is hit (no hit returns null -> pass through as-is, no pointless recompression)
     if (text.includes(LOOPBACK_JS_NEEDLE)) {
       return Buffer.from(text.split(LOOPBACK_JS_NEEDLE).join(LOOPBACK_JS_REPLACEMENT));
     }
@@ -119,11 +119,11 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
   });
 });
 
-// changeOrigin 把 Host 改写为目标地址，浏览器带的 Origin 需同步对齐，
-// 否则 DSH 的 /api 同源校验(Origin 必须等于它看到的 Host)会拒绝(403)，
-// WS 握手同样走该校验。
-// 注意：不再剥离 Accept-Encoding。上游无论是否压缩（gzip/deflate/br 均可），
-// proxyRes 的压缩兼容管线都会「解压 → 改写 → 重压」，保留带宽收益。
+// changeOrigin rewrites the Host header to the target address, so the Origin sent by the browser must be aligned accordingly,
+// otherwise DSH's /api same-origin check (Origin must equal the Host it sees) will reject the request (403),
+// and WS handshakes go through the same check.
+// Note: Accept-Encoding is no longer stripped. Whether or not the upstream compresses (gzip/deflate/br all fine),
+// the compression-compatible pipeline in proxyRes will "decompress -> rewrite -> recompress", preserving the bandwidth benefit.
 function alignOrigin(req) {
   if (req.headers.origin) req.headers.origin = TARGET_ORIGIN;
 }
@@ -134,8 +134,8 @@ const server = http.createServer((req, res) => {
     rejectUnauthorized(res);
     return;
   }
-  // 根目录 GET 走 serveIndex：上游(如官方 0.1.2+)返回 401 时携带 launch token 重发一次，
-  // 换取会话 cookie；返回 false（异常）则回退到普通反向代理。
+  // A GET to the root path goes through serveIndex: if the upstream (e.g. official 0.1.2+) returns 401, resend once carrying the launch token
+  // to obtain a session cookie; if it returns false (abnormal), fall back to the plain reverse proxy.
   if (req.method === 'GET' && pathname === '/') {
     serveIndex(req, res, { origin: TARGET_ORIGIN, transformHtml: html => injectIntoHead(html, POLYFILL) })
       .then((handled) => {
@@ -159,5 +159,5 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.listen(LISTEN_PORT, '0.0.0.0', () => {
-  console.log(`代理已启动，监听 0.0.0.0:${LISTEN_PORT}，转发到 ${TARGET_ORIGIN}${AUTH_USER && AUTH_PASS ? '（Basic Auth 已启用）' : '（未启用认证）'}`);
+  console.log(`Proxy started, listening on 0.0.0.0:${LISTEN_PORT}, forwarding to ${TARGET_ORIGIN}${AUTH_USER && AUTH_PASS ? ' (Basic Auth enabled)' : ' (auth disabled)'}`);
 });

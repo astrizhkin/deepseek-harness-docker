@@ -1,36 +1,36 @@
-# deepseek-harness（Docker 镜像）
+# deepseek-harness (Docker Image)
 
-镜像地址（默认）：**`smanx/deepseek-harness:latest`**（Docker Hub）
-镜像地址（备用）：**`ghcr.io/smanx/deepseek-harness:latest`**（GitHub Container Registry，GHCR，所有 tag 同步推送）
-Docker Hub 项目主页：https://hub.docker.com/r/smanx/deepseek-harness
-Github 项目主页：https://github.com/smanx/deepseek-harness-docker
+Image (default): **`smanx/deepseek-harness:latest`** (Docker Hub)
+Image (backup): **`ghcr.io/smanx/deepseek-harness:latest`** (GitHub Container Registry, GHCR; all tags are mirrored there)
+Docker Hub project page: https://hub.docker.com/r/smanx/deepseek-harness
+Github project page: https://github.com/smanx/deepseek-harness-docker
 
 
-一个开箱即用的 **DeepSeek Harness（DSH）** Docker 镜像，内置了 Node 反向代理，解决 DSH 官方不允许 `--host 0.0.0.0`、只能监听回环地址的问题，让 DSH 可以安全地通过局域网访问。
+An out-of-the-box **DeepSeek Harness (DSH)** Docker image with a built-in Node reverse proxy. It solves the issue that DSH officially forbids `--host 0.0.0.0` (loopback-only listening) and makes DSH safely accessible over your LAN.
 
-## 在线体验地址（Demo）
+## Online Demo
 
-- 体验地址：https://dsh.smanx.xx.kg
-- 登录账号 / 密码：`admin` / `admin`
+- Demo URL: https://dsh.smanx.xx.kg
+- Username / Password: `admin` / `admin`
 
-> ⚠️ **注意：** 该地址为**公开地址**。如需填入你自己的 API Key（如 DeepSeek 等），请**谨慎填写**，以免 Key 泄露。
+> ⚠️ **Note:** This is a **public address**. If you fill in your own API key (e.g. DeepSeek), please be **very careful** — your key may be exposed.
 
-## 项目介绍
+## About the Project
 
-- **DSH**：容器内安装官方 npm 包 `@deepseek-ai/dsh`（[deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)），默认监听容器内 `127.0.0.1:3079`（源端口）；
-- **Node 代理**：`0.0.0.0:3080`（代理端口）→ `127.0.0.1:3079`，对外提供 HTTP + WebSocket 转发；
-- **为什么需要代理**：
-  - DSH 官方禁止 `--host 0.0.0.0`（安全限制），只能监听回环地址；
-  - 局域网 IP 页面属于浏览器**非安全上下文**，DSH 前端依赖的 `crypto.randomUUID` 不可用，代理在转发 HTML 时自动注入基于 `getRandomValues` 的 polyfill，否则实时通道（WS）会一直 pending；
-  - 代理同时提供可选的 **HTTP Basic Auth**，给局域网访问加认证。
+- **DSH**: Installs the official npm package `@deepseek-ai/dsh` ([deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)) inside the container, listening on `127.0.0.1:3079` (source port) by default;
+- **Node proxy**: `0.0.0.0:3080` (proxy port) → `127.0.0.1:3079`, providing HTTP + WebSocket forwarding to the outside;
+- **Why a proxy is needed**:
+  - DSH officially forbids `--host 0.0.0.0` (security restriction) and can only listen on the loopback address;
+  - Pages loaded over a LAN IP are in a browser **non-secure context**, where the `crypto.randomUUID` used by the DSH frontend is unavailable. The proxy automatically injects a `getRandomValues`-based polyfill into served HTML; without it the realtime channel (WS) stays pending forever;
+  - The proxy also provides optional **HTTP Basic Auth** to protect LAN access.
 
-## 快速开始（拉取运行）
+## Quick Start (pull & run)
 
 ```bash
-# 1. 拉取镜像（默认从 Docker Hub 拉取）
+# 1. Pull the image (default: Docker Hub)
 docker pull smanx/deepseek-harness:latest
 
-# 2. 启动（默认：代理对外端口 3080，数据持久化到命名卷 dsh-data）
+# 2. Run (defaults: proxy port 3080, data persisted to named volume dsh-data)
 docker run -d \
   --name dsh-harness \
   -p 3080:3080 \
@@ -38,28 +38,28 @@ docker run -d \
   --restart unless-stopped \
   smanx/deepseek-harness:latest
 
-# 3. 访问
-#    本机：  http://127.0.0.1:3080/
-#    局域网：http://<服务器局域网IP>:3080/
+# 3. Access
+#    Local machine: http://127.0.0.1:3080/
+#    LAN:           http://<server-LAN-IP>:3080/
 ```
 
-WebSocket 实时通道（`/api/events.mux`、`/api/events.host`）由代理自动转发，无需额外配置。
+The WebSocket realtime channels (`/api/events.mux`, `/api/events.host`) are forwarded automatically by the proxy — no extra configuration needed.
 
-### 不同 tag 的区别
+### Differences between the tags
 
-| tag | 定位 | 包含工具 |
+| Tag | Purpose | Included tools |
 |---|---|---|
-| `latest` | 精简运行镜像 | 无（仅 Node 运行时 + DSH + 反向代理） |
-| `devtools-min-latest` | 精简工具版，常用调试工具 | git、curl、wget、nano、jq、procps、ca-certificates、unzip；npm 全局包：pnpm；uv |
-| `devtools-latest` | 完整工具版，可在容器内开发/编译 | 精简版全部 + vim、openssh-client、zip、htop、tmux、tree、openssl、python3、build-essential(make+g++)、bash-completion；npm 全局包：pnpm；uv |
-| `admin-latest` | 管理版：**预装最新 DSH**，开箱即用，页面自选版本安装/切换 | 同完整工具版（含 pnpm、uv）+ 管理服务；保留 python3/build-essential 供运行时编译 node-pty |
+| `latest` | Slim runtime image | None (only Node runtime + DSH + reverse proxy) |
+| `devtools-min-latest` | Minimal tools for common debugging | git, curl, wget, nano, jq, procps, ca-certificates, unzip; npm globals: pnpm; uv |
+| `devtools-latest` | Full tools for developing/compiling inside the container | everything in Minimal + vim, openssh-client, zip, htop, tmux, tree, openssl, python3, build-essential (make/g++), bash-completion; npm globals: pnpm; uv |
+| `admin-latest` | Admin variant: **latest DSH pre-installed**, works out of the box; admin page to pick/install/switch versions | same as Full Tools (pnpm, uv) + manager service; keeps python3/build-essential to compile node-pty at runtime |
 
-> 每个 tag 都有对应的**版本号 tag**：`latest` ↔ `<版本>`、`devtools-latest` ↔ `devtools-<版本>`、`devtools-min-latest` ↔ `devtools-min-<版本>`、`admin-latest` ↔ `admin-<版本>`（admin 预装最新 DSH，版本号 tag 即为 DSH 版本）。
+> Each tag also has a matching **versioned tag**: `latest` ↔ `<version>`, `devtools-latest` ↔ `devtools-<version>`, `devtools-min-latest` ↔ `devtools-min-<version>`, `admin-latest` ↔ `admin-<version>` (admin pre-installs the latest DSH, so its version tag is the DSH version).
 
-**简单示例：**
+**A simple example:**
 
 ```bash
-# 场景一：只想在浏览器里跑 DSH，不做任何调试 → 用精简的 latest
+# Scenario 1: just run DSH in the browser with no debugging → use the slim `latest`
 docker run -d \
   --name dsh-harness \
   -p 3080:3080 \
@@ -67,7 +67,8 @@ docker run -d \
   --restart unless-stopped \
   smanx/deepseek-harness:latest
 
-# 场景二：需要进容器排查问题（看日志、jq 处理 JSON、wget 抓包）→ 用 devtools-min-latest
+# Scenario 2: you need to get inside the container to troubleshoot
+# (view logs, process JSON with jq, fetch things with wget) → use devtools-min-latest
 docker run -d \
   --name dsh-harness \
   -p 3080:3080 \
@@ -75,7 +76,8 @@ docker run -d \
   --restart unless-stopped \
   smanx/deepseek-harness:devtools-min-latest
 
-# 场景三：要在容器里开发/编译扩展或做较重的运维（vim、python3、make 等）→ 用 devtools-latest
+# Scenario 3: develop/compile inside the container or do heavier ops
+# (vim, python3, make, etc.) → use devtools-latest
 docker run -d \
   --name dsh-harness \
   -p 3080:3080 \
@@ -84,26 +86,26 @@ docker run -d \
   smanx/deepseek-harness:devtools-latest
 ```
 
-三个 tag 的启动命令完全一样，只是把镜像名替换成对应的 tag 即可；`latest` 之外的工具版镜像会比精简版略大，按需选择。
+The run command is identical across all three tags — only the image name (tag) changes. The tooled variants are a bit larger than the slim image, so pick what fits.
 
-> 工具版（devtools / devtools-min / test）内置 **pnpm**（npm 全局安装）。DSH 的 `dsh plugin` 命令依赖 pnpm 管理插件，
-> 社区插件市场 [dsh-market](https://github.com/dsh-market/dsh-market)（`dsh plugin --profile web add dshmarket`）也需要它；
-> 精简版 `latest` 不内置，首次使用插件时 dsh-market 会检测缺失并提供一键自动安装。
+> The tooled variants (`devtools` / `devtools-min` / `test`) ship with **pnpm** (installed via npm globally). DSH's `dsh plugin` command relies on pnpm to manage plugins,
+> and the community plugin market [dsh-market](https://github.com/dsh-market/dsh-market) (`dsh plugin --profile web add dshmarket`) needs it too.
+> The slim `latest` does not bundle it — on first plugin use, dsh-market detects the missing pnpm and offers one-click automatic setup.
 >
-> 工具版还内置 **uv**（Python 包管理器，静态二进制，不依赖系统 Python）。不少社区 MCP server 以
-> `uvx` / `uv run` 方式启动（DSH 的 MCP 客户端配置中常见 `"command": "uvx"`），缺少 uv 时这类 MCP 无法运行。
+> They also ship **uv** (Python package manager, static binary, no system Python required). Many community MCP servers launch via
+> `uvx` / `uv run` (commonly seen in DSH MCP client configs as `"command": "uvx"`) — without uv those MCPs cannot run.
 
-#### admin 变体（管理版，预装最新 DSH）
+#### Admin variant (latest DSH pre-installed)
 
-`admin` 变体**随镜像预装最新 DSH（@next）**。容器启动后管理服务自动识别并拉起 DSH，直接访问 `/` 即可进入 DSH 界面；访问 `/__admin/` 进入管理台：
+The `admin` variant **pre-installs the latest DSH (@next)**. After the container starts, the manager service detects and starts DSH automatically, so `/` serves the DSH UI directly; visiting `/__admin/` opens the admin page, where you can:
 
-- 查看 `@deepseek-ai/dsh` 可用版本（`latest`/`next` 等 dist-tag + 全部版本），选择并**安装 / 切换**版本，安装进度实时显示；
-- 手动配置 **npm 源（NPM_CONFIG_REGISTRY）**：输入框**自动回显默认值**（环境变量 `NPM_CONFIG_REGISTRY` 或官方源）与**上次配置的值**，并显示当前生效值，可一键「使用默认值」或清空恢复默认；优先级：**页面配置 > 环境变量 `NPM_CONFIG_REGISTRY` > 默认值**；
-- 一键**重启** DSH；安装完成后自动启动，页面右下角悬浮「⚙ 管理」按钮可随时回到管理台调整版本。
+- Browse available versions of `@deepseek-ai/dsh` (dist-tags like `latest`/`next` plus the full list) and **install / switch** versions, with live install logs;
+- Configure the **npm registry (NPM_CONFIG_REGISTRY)** manually: the input field **auto-fills the default** (env `NPM_CONFIG_REGISTRY` or the official registry) and the **last-saved value**, and shows the effective value; you can restore the default or clear it with one click. Priority: **page config > env `NPM_CONFIG_REGISTRY` > default**;
+- **Restart** DSH with one click. After install it starts automatically, and a floating "⚙ Admin" button stays in the bottom-right corner of the DSH page so you can always get back to the admin page.
 
 ```bash
-# admin 变体：需要两个命名卷（dsh-data 存 DSH 配置/会话、dsh-install 存 DSH 安装文件与配置状态，
-# 这样容器重建后升级/源配置依然有效）
+# Admin variant: use two named volumes (dsh-data for DSH config/sessions, dsh-install for the
+# installed DSH files and config state, so upgrades/registry survive container recreation)
 docker run -d \
   --name dsh-harness \
   -p 3080:3080 \
@@ -113,17 +115,17 @@ docker run -d \
   smanx/deepseek-harness:admin-latest
 ```
 
-> admin 变体保留了 `python3` + `build-essential`（node-pty 在 Linux 上无预编译产物，管理台安装其他版本 DSH 时需容器内从源码编译原生模块），镜像比精简版略大。
+> The admin variant keeps `python3` + `build-essential` (node-pty has no Linux prebuilds, so installing other DSH versions from the page needs to compile the native module from source in-container), making the image a bit larger than the slim one.
 
-### 备用镜像（GHCR）
+### Backup Image (GHCR)
 
-如果从 Docker Hub 拉取受限（如网络问题），可以使用备用镜像（GitHub Container Registry，tag 与 Docker Hub 完全一致）：
+If pulling from Docker Hub is restricted (e.g. network issues), you can use the backup image (GitHub Container Registry; tags are identical to Docker Hub):
 
 ```bash
-# 拉取 GHCR 上的镜像
+# Pull the image from GHCR
 docker pull ghcr.io/smanx/deepseek-harness:latest
 
-# 启动命令与默认镜像完全一样，只需替换镜像名
+# Same run command as the default image — just swap the image name
 docker run -d \
   --name dsh-harness \
   -p 3080:3080 \
@@ -132,23 +134,23 @@ docker run -d \
   ghcr.io/smanx/deepseek-harness:latest
 ```
 
-> 除镜像地址不同外，两个镜像的配置与使用方式完全一致，可互相替换。
+> The two images are identical in configuration and usage — only the registry differs, so they are interchangeable.
 
-## 配置（环境变量）
+## Configuration (Environment Variables)
 
-| 环境变量 | 含义 | 默认值 |
+| Variable | Meaning | Default |
 |---|---|---|
-| `DSH_PORT` | 源端口：DSH 在容器内监听（`127.0.0.1`） | `3079` |
-| `PROXY_PORT` | 代理端口：代理对外监听（局域网入口） | `3080` |
-| `PROXY_USERNAME` | Basic Auth 用户名（可选） | 未设置 |
-| `PROXY_PASSWORD` | Basic Auth 密码（可选） | 未设置 |
-| `NPM_CONFIG_REGISTRY` | admin 变体管理页「npm 源」的默认值（优先级低于页面配置） | `https://registry.npmjs.org/` |
-| `DSH_INSTALL_DIR` | admin 变体 DSH 安装目录（页面安装的 DSH 及状态文件都在这里，建议挂载命名卷） | `/opt/dsh` |
+| `DSH_PORT` | Source port: where DSH listens inside the container (`127.0.0.1`) | `3079` |
+| `PROXY_PORT` | Proxy port: where the proxy listens (LAN entry point) | `3080` |
+| `PROXY_USERNAME` | Basic Auth username (optional) | unset |
+| `PROXY_PASSWORD` | Basic Auth password (optional) | unset |
+| `NPM_CONFIG_REGISTRY` | Default npm registry on the admin page (lower priority than the page config) | `https://registry.npmjs.org/` |
+| `DSH_INSTALL_DIR` | DSH install directory in the admin variant (installed DSH and config state live here; mount a named volume) | `/opt/dsh` |
 
-> `DSH_PORT` 与 `PROXY_PORT` 必须不同（同一端口只能被一个进程监听）。
-> 修改 `PROXY_PORT` 时，`-p` 端口映射要对应改成 `-p <宿主机端口>:<新代理端口>`。
+> `DSH_PORT` and `PROXY_PORT` must differ (a port can only be bound by one process).
+> If you change `PROXY_PORT`, remember to update the port mapping accordingly: `-p <host-port>:<new-proxy-port>`.
 
-### 启用 Basic Auth
+### Enabling Basic Auth
 
 ```bash
 docker run -d \
@@ -161,14 +163,14 @@ docker run -d \
   smanx/deepseek-harness:latest
 ```
 
-- 用户名和密码**两个都设置**才启用认证；只设置一个（或都不设置）则完全放行；
-- 认证对 HTTP 和 WebSocket 都生效，未通过认证返回 `401` + `WWW-Authenticate`，浏览器会弹出认证框；
-- 公开静态资源 `/manifest.webmanifest`、`/favicon.svg`、`/favicon.ico` 不参与认证（只含应用名/图标等非敏感数据）。浏览器抓取 `<link rel="manifest">` 时不会携带 Basic Auth 凭据，若强制认证，控制台会持续报 `/manifest.webmanifest` 401。
+- Auth is enabled **only when both** username and password are set; if either (or both) is missing, access is completely open;
+- Auth applies to both HTTP and WebSocket. Unauthenticated requests get `401` + `WWW-Authenticate`, and the browser shows a credential prompt;
+- Public static assets `/manifest.webmanifest`, `/favicon.svg`, and `/favicon.ico` are exempt from authentication (they contain only non-sensitive data such as the app name and icons). When the browser fetches `<link rel="manifest">` it does not send Basic Auth credentials, so if authentication were enforced there, the console would keep reporting `401` for `/manifest.webmanifest`.
 
-### 修改代理端口
+### Changing the proxy port
 
 ```bash
-# 例如代理对外用 3088
+# e.g. expose the proxy on port 3088
 docker run -d \
   --name dsh-harness \
   -p 3088:3088 \
@@ -178,22 +180,22 @@ docker run -d \
   smanx/deepseek-harness:latest
 ```
 
-## 数据持久化
+## Data Persistence
 
-DSH 的会话/配置数据保存在容器内 `/root/.dsh`，上面的命令用命名卷 `dsh-data` 持久化：
+DSH session/configuration data lives in `/root/.dsh` inside the container; the commands above persist it via the named volume `dsh-data`:
 
-- `docker stop/start` 和容器删除后卷仍在，数据不丢；
-- 彻底清除数据：`docker volume rm dsh-data`（先停容器）。
+- Data survives `docker stop/start` and container removal;
+- To wipe it completely: `docker volume rm dsh-data` (stop the container first).
 
-## 停止 / 重启 / 删除
+## Stop / Restart / Remove
 
 ```bash
-docker stop dsh-harness     # 停止
-docker start dsh-harness    # 再次启动
-docker logs -f dsh-harness  # 查看日志
-docker rm -f dsh-harness    # 删除容器（卷中的数据保留）
+docker stop dsh-harness     # stop
+docker start dsh-harness    # start again
+docker logs -f dsh-harness  # view logs
+docker rm -f dsh-harness    # remove the container (volume data is kept)
 ```
 
-## 联系作者 / 反馈
+## Contact & Feedback
 
-- 交流与 Bug 反馈：https://github.com/deepseek-ai/deepseek-harness/discussions/1762
+- Discussion & bug feedback: https://github.com/deepseek-ai/deepseek-harness/discussions/1762

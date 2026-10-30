@@ -1,32 +1,32 @@
 #!/bin/sh
 set -e
 
-# admin 变体：镜像内存在 /app/.admin-mode 标记时，改由管理服务接管
-# （管理服务负责：页面安装/切换 DSH 版本、配置 npm 源、托管 DSH 进程并反向代理；
-#   未安装 DSH 时访问 / 自动跳转管理员页）
+# admin variant: when the /app/.admin-mode marker exists in the image, the manager service takes over
+# (the manager handles: installing/switching DSH versions from the web page, configuring the npm registry, supervising the DSH process and reverse-proxying it;
+#   when no DSH is installed, visiting / redirects to the admin page automatically)
 if [ -f /app/.admin-mode ]; then
-  echo "[admin] 检测到 admin 变体，启动 DSH 管理服务 ..."
+  echo "[admin] Detected admin variant, starting DSH manager service ..."
   exec node /app/manager/index.js
 fi
 
-# 端口配置（均可通过环境变量覆盖）
-#   DSH_PORT    源端口（DSH 监听，容器内 127.0.0.1），默认 3079
-#   PROXY_PORT  代理端口（代理对外监听），默认 3080（必须与 DSH_PORT 不同）
+# Port configuration (both can be overridden via environment variables)
+#   DSH_PORT    source port (DSH listens on 127.0.0.1 inside the container), default 3079
+#   PROXY_PORT  proxy port (the proxy's public listener), default 3080 (must differ from DSH_PORT)
 DSH_PORT="${DSH_PORT:-3079}"
 PROXY_PORT="${PROXY_PORT:-3080}"
 
-# ── 1. 启动 DSH（默认监听 127.0.0.1:3080）────────────────────────────
-# DSH 输出需同时落盘到 /app/.dsh-web.log：代理的 upstream-token.js 靠读该文件
-# 打捞 launch token（用于根目录 401 时重发换会话 cookie）。用重定向直写文件
-# （立即落盘、无管道缓冲延迟），再用 tail -f 转发到容器输出保持可见。
-# 注意：不能用 `| tee` 管道——那样 $! 捕获的是 tee 的 PID，cleanup 会杀错进程。
-echo "[dsh] 启动 DSH (dsh web --port $DSH_PORT) ..."
-dsh web --port "$DSH_PORT" > /app/.dsh-web.log 2>&1 &
+# ── 1. Start DSH (listens on 127.0.0.1:3080 by default) ────────────────────────────
+# DSH output must also be written to /app/.dsh-web.log: the proxy's upstream-token.js reads that file
+# to recover the launch token (used to re-issue it for a session cookie on a 401 at the root path). Redirect straight to the file
+# (written immediately, no pipe buffering delay), then tail -f forwards it to the container output to stay visible.
+# Note: do not use a `| tee` pipe -- $! would then capture tee's PID and cleanup would kill the wrong process.
+echo "[dsh] Starting DSH (dsh web --port $DSH_PORT) ..."
+dsh web --no-open --port "$DSH_PORT" > /app/.dsh-web.log 2>&1 &
 DSH_PID=$!
 tail -f /app/.dsh-web.log &
 
-# ── 2. 等待 DSH 就绪（最多 120 秒）─────────────────────────────────
-echo "[dsh] 等待 DSH 就绪 (127.0.0.1:$DSH_PORT) ..."
+# ── 2. Wait for DSH to be ready (up to 120 seconds) ─────────────────────────────────
+echo "[dsh] Waiting for DSH to be ready (127.0.0.1:$DSH_PORT) ..."
 ready=0
 i=0
 while [ "$i" -lt 120 ]; do
@@ -35,7 +35,7 @@ while [ "$i" -lt 120 ]; do
     break
   fi
   if ! kill -0 "$DSH_PID" 2>/dev/null; then
-    echo "[dsh] 错误：DSH 进程已退出"
+    echo "[dsh] Error: DSH process has exited"
     exit 1
   fi
   i=$((i + 1))
@@ -43,20 +43,20 @@ while [ "$i" -lt 120 ]; do
 done
 
 if [ "$ready" != "1" ]; then
-  echo "[dsh] 错误：DSH 120 秒内未就绪"
+  echo "[dsh] Error: DSH not ready within 120 seconds"
   exit 1
 fi
-echo "[dsh] DSH 就绪（pid $DSH_PID）"
+echo "[dsh] DSH ready (pid $DSH_PID)"
 
-# ── 3. 容器停止时同时关闭 DSH ──────────────────────────────────────
+# ── 3. Shut DSH down as well when the container stops ──────────────────────────────
 cleanup() {
-  echo "[proxy] 收到退出信号，停止 DSH ..."
+  echo "[proxy] Received exit signal, stopping DSH ..."
   kill "$DSH_PID" 2>/dev/null || true
   wait "$DSH_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
-# ── 4. 启动代理（前台运行，保持容器存活）──────────────────────────
-echo "[proxy] 启动代理：0.0.0.0:$PROXY_PORT -> 127.0.0.1:$DSH_PORT"
+# ── 4. Start the proxy (foreground, keeps the container alive) ──────────────────────
+echo "[proxy] Starting proxy: 0.0.0.0:$PROXY_PORT -> 127.0.0.1:$DSH_PORT"
 cd /app/proxy
 exec node index.js

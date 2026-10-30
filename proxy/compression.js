@@ -1,25 +1,25 @@
-// 响应体压缩兼容管线：解压 → 改写 → 重压。
+// Response-body compression-compatible pipeline: decompress -> rewrite -> recompress.
 //
-// 背景：DSH 0.1.2+ 的 web server 默认开启 gzip（compression: gzip），压缩后的响应
-// 是二进制字节流，任何基于明文字符串的改写（HTML polyfill 注入、isLoopbackHostname
-// 替换）都无法匹配。上一版方案是转发时剥离 Accept-Encoding、强制上游返回明文，
-// 依赖「上游遵循 HTTP 协商」这一前提。
+// Background: the DSH 0.1.2+ web server enables gzip by default (compression: gzip), and a compressed
+// response is a binary byte stream, so any rewrite based on plaintext strings (HTML polyfill injection, isLoopbackHostname
+// replacement) cannot match. The previous approach stripped Accept-Encoding when forwarding to force the upstream to return plaintext,
+// relying on the assumption that "the upstream honors HTTP content negotiation".
 //
-// 本模块改为完整兼容浏览器/上游的所有压缩形态（gzip / deflate / br，以及不压缩的
-// identity）：转发时保留上游的压缩响应，缓冲完整 body → 按 Content-Encoding 解压成
-// 明文 → 执行改写 → 再按原编码重压回传。这样无论上游是否压缩、压缩成哪种格式，
-// 改写逻辑都能生效；遇到不支持的编码（如 zstd）或解压失败时，原样透传、绝不破坏响应。
+// This module instead fully supports every compression form from browsers/upstreams (gzip / deflate / br, plus uncompressed
+// identity): when forwarding, keep the upstream's compressed response, buffer the complete body -> decompress to
+// plaintext per Content-Encoding -> apply the rewrite -> recompress with the original encoding and send it back. This way, regardless of whether the upstream compresses and in which format,
+// the rewrite logic still works; when an unsupported encoding (e.g. zstd) is met or decompression fails, pass through as-is and never break the response.
 const zlib = require('zlib');
 
-// 从 Content-Encoding 头解析编码。可能形如 "gzip"、"br"、"gzip, br"，取第一个有效值。
-// 空/identity 表示未压缩。无法识别时返回原串（调用方视为不支持）。
+// Parse the encoding from the Content-Encoding header. It may look like "gzip", "br", or "gzip, br"; take the first valid value.
+// Empty/identity means uncompressed. When unrecognizable, return the original string (the caller treats it as unsupported).
 function parseEncoding(ce) {
   if (!ce) return 'identity';
   const first = String(ce).split(',')[0].trim().toLowerCase();
   return first || 'identity';
 }
 
-// 解压成明文。identity 直接返回原 Buffer；支持 gzip/deflate/br；其余或失败返回 null。
+// Decompress to plaintext. identity returns the original Buffer directly; gzip/deflate/br are supported; anything else or a failure returns null.
 function decompress(buf, encoding) {
   if (!encoding || encoding === 'identity') return buf;
   try {
@@ -27,7 +27,7 @@ function decompress(buf, encoding) {
       case 'gzip':
         return zlib.gunzipSync(buf);
       case 'deflate':
-        // 优先标准 zlib 封装；部分服务器发裸 deflate（RFC 1951），失败后回退尝试
+        // Prefer the standard zlib wrapper; some servers send raw deflate (RFC 1951), so fall back to trying it after a failure
         try {
           return zlib.inflateSync(buf);
         } catch {
@@ -36,14 +36,14 @@ function decompress(buf, encoding) {
       case 'br':
         return zlib.brotliDecompressSync(buf);
       default:
-        return null; // 不支持的编码（如 zstd）→ 无法改写
+        return null; // unsupported encoding (e.g. zstd) -> cannot rewrite
     }
   } catch {
     return null;
   }
 }
 
-// 按原编码重压。identity 直接返回原 Buffer；支持 gzip/deflate/br；其余或失败返回 null。
+// Recompress with the original encoding. identity returns the original Buffer directly; gzip/deflate/br are supported; anything else or a failure returns null.
 function recompress(buf, encoding) {
   if (!encoding || encoding === 'identity') return buf;
   try {
@@ -62,13 +62,13 @@ function recompress(buf, encoding) {
   }
 }
 
-// 把「缓冲 → 解压 → transform(明文) → 重压 → 输出」管线挂到 res 上，供 http-proxy 的
-// proxyRes 事件使用。改写后长度必然变化，统一删除 content-length、按 chunked 发送。
-//   transform(plainBuffer) → 返回改写后的 Buffer；返回 null 表示无需改写（原样透传）。
-// 降级策略（保证任何情况下响应不被破坏）：
-//   - 上游压缩但解压失败 / 编码不支持 → 原样透传压缩字节，Content-Encoding 保持上游值；
-//   - 改写后重压失败 → 降级为明文发送并删除 Content-Encoding，浏览器按明文读取；
-//   - 未压缩（identity）→ 直接改写，不产生任何压缩开销。
+// Attach the "buffer -> decompress -> transform(plaintext) -> recompress -> output" pipeline to res, for use by
+// http-proxy's proxyRes event. After rewriting the length necessarily changes, so content-length is deleted uniformly and the body is sent chunked.
+//   transform(plainBuffer) -> returns the rewritten Buffer; returning null means no rewrite needed (pass through as-is).
+// Degradation strategy (guaranteeing the response is never broken under any circumstances):
+//   - upstream compressed but decompression failed / encoding unsupported -> pass the compressed bytes through as-is, keeping the upstream's Content-Encoding value;
+//   - recompression after rewriting fails -> degrade to sending plaintext and delete Content-Encoding, so the browser reads it as plaintext;
+//   - uncompressed (identity) -> rewrite directly, incurring no compression overhead at all.
 function attachBodyTransform(res, proxyRes, transform) {
   const encoding = parseEncoding(proxyRes.headers['content-encoding']);
   delete proxyRes.headers['content-length'];
@@ -98,9 +98,9 @@ function attachBodyTransform(res, proxyRes, transform) {
       if (rewritten !== null) {
         const compressed = recompress(rewritten, encoding);
         if (compressed !== null) {
-          out = compressed; // 解压 → 改写 → 重压成功，Content-Encoding 保持原编码
+          out = compressed; // decompress -> rewrite -> recompress succeeded, Content-Encoding keeps the original encoding
         } else {
-          out = rewritten; // 重压失败：降级为明文发送，必须去掉 Content-Encoding 否则浏览器解压乱码
+          out = rewritten; // recompression failed: degrade to sending plaintext; Content-Encoding must be removed or the browser will decode garbage
           delete proxyRes.headers['content-encoding'];
         }
       }

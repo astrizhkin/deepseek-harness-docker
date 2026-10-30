@@ -1,17 +1,17 @@
-# DSH（DeepSeek Harness）需要 Node.js；官方 npm 包 @deepseek-ai/dsh 已验证可在 Node 24 运行
-# （官方以 Node 24.19.0 构建/验证）
+# DSH (DeepSeek Harness) requires Node.js; the official npm package @deepseek-ai/dsh has been verified to run on Node 24
+# (officially built/verified with Node 24.19.0)
 #
-# 关键点：@deepseek-ai/dsh 依赖的原生模块 node-pty（终端）在 npm 包里只带 macOS/Windows
-# 的预编译产物（prebuilds/ 下仅有 darwin-arm64/darwin-x64/win32-arm64/win32-x64），
-# Linux 上没有任何预编译二进制，安装时必然回退到 node-gyp 从源码编译，需要
-# python3 + make + g++。node:24-slim 不含这些工具，直接 `npm install -g @deepseek-ai/dsh`
-# 会报：
+# Key point: the native module node-pty (terminal) that @deepseek-ai/dsh depends on ships only with
+# prebuilt binaries for macOS/Windows in the npm package (prebuilds/ contains only darwin-arm64/darwin-x64/win32-arm64/win32-x64),
+# there are no prebuilt binaries for Linux, so installation always falls back to node-gyp compiling from source, which needs
+# python3 + make + g++. node:24-slim does not include these tools, so running `npm install -g @deepseek-ai/dsh`
+# directly reports:
 #   gyp ERR! find Python ... Could not find any Python installation to use
-# 因此采用多阶段构建：先在带编译工具的阶段安装 DSH（顺带编译 node-pty），
-# 再把 /usr/local（Node + DSH + 编译产物）复制进精简运行镜像，运行镜像不保留编译工具。
+# Therefore a multi-stage build is used: DSH is installed in a stage that has the build tools (compiling node-pty along the way),
+# then /usr/local (Node + DSH + build artifacts) is copied into the slim runtime image, which keeps no build tools.
 
-# ── 阶段 1：安装 DSH 并编译原生模块 ────────────────────────────────
-# admin 变体预装最新 DSH（@next）到 /opt/dsh（即管理服务的安装目录，挂载空卷时自动填充、开箱即用）
+# ── Stage 1: install DSH and compile native modules ────────────────────────────────
+# The admin variant preinstalls the latest DSH (@next) into /opt/dsh (the manager service's install dir; auto-populated when an empty volume is mounted, works out of the box)
 FROM node:24-slim AS dsh-builder
 ARG DEV_TOOLS=none
 RUN apt-get update \
@@ -24,50 +24,50 @@ RUN apt-get update \
        fi \
     && mkdir -p /opt/dsh
 
-# ── 阶段 2：精简运行镜像 ───────────────────────────────────────────
+# ── Stage 2: slim runtime image ───────────────────────────────────────────
 FROM node:24-slim
 WORKDIR /app
 
-# 开发工具变体开关：none（默认，不装）| <tag 前缀>（如 devtools / devtools-min）
-# 构建时通过 --build-arg DEV_TOOLS=<前缀> 启用；各前缀要安装的工具由
-# .build-variants 文件按前缀定义，直接编辑该文件即可增删工具
+# Dev-tools variant switch: none (default, install nothing) | <tag prefix> (e.g. devtools / devtools-min)
+# Enabled at build time via --build-arg DEV_TOOLS=<prefix>; the tools installed for each prefix are
+# defined per prefix in the .build-variants file; edit that file directly to add or remove tools
 ARG DEV_TOOLS=none
 
-# 复制 Node 运行时 + DSH（含编译好的 node-pty）。两阶段同为 node:24-slim，
-# /usr/local 内容一致，仅多出 npm 全局安装的 @deepseek-ai/dsh
+# Copy the Node runtime + DSH (including the compiled node-pty). Both stages use node:24-slim, so
+# /usr/local contents are identical except for the npm-globally-installed @deepseek-ai/dsh
 COPY --from=dsh-builder /usr/local/ /usr/local/
 
-# admin 变体：把构建阶段预装的最新 DSH 复制到管理服务安装目录 /opt/dsh
-# （首次挂载空卷时 Docker 自动填充该目录，管理服务启动即识别并自动拉起 DSH）
+# admin variant: copy the preinstalled latest DSH from the build stage into the manager install dir /opt/dsh
+# (Docker auto-populates the directory when an empty volume is first mounted; the manager detects it on startup and auto-launches DSH)
 COPY --from=dsh-builder /opt/dsh/ /opt/dsh/
 
-# 生成版本文件，供 CI（docker-build/.github/workflows/projects.yml）用 docker cp 提取 APP_VERSION 打镜像标签；
-# 若该文件缺失，CI 会回退为日期标签；admin 变体预装在 /opt/dsh，其余变体在 /usr/local
+# Generate a version file so CI (docker-build/.github/workflows/projects.yml) can extract APP_VERSION via docker cp to tag images;
+# if the file is missing, CI falls back to a date tag; the admin variant is preinstalled in /opt/dsh, other variants in /usr/local
 RUN if [ "$DEV_TOOLS" = "admin" ]; then \
       node -p "'APP_VERSION=' + require('/opt/dsh/lib/node_modules/@deepseek-ai/dsh/package.json').version" > /tmp/app_version.env; \
     else \
       node -p "'APP_VERSION=' + require('/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json').version" > /tmp/app_version.env; \
     fi
 
-# 代理代码及其依赖（http-proxy）
+# Proxy code and its dependency (http-proxy)
 COPY proxy/ /app/proxy/
 RUN cd /app/proxy && npm install --omit=dev --no-audit --no-fund
 
-# 管理服务（admin 变体专用）：页面安装/切换 DSH 版本、配置 npm 源、托管 DSH 进程并反向代理
+# Manager service (admin variant only): install/switch DSH versions from the web page, configure the npm registry, supervise the DSH process and reverse-proxy it
 COPY manager/ /app/manager/
 RUN cd /app/manager && npm install --omit=dev --no-audit --no-fund
 
-# 启动脚本（默认流程：先启动 DSH，等待就绪后启动代理）
+# Entrypoint script (default flow: start DSH first, wait until ready, then start the proxy)
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-# admin 变体标记：镜像内存在 /app/.admin-mode 时 entrypoint.sh 改走管理服务
-# （预装最新 DSH，管理台仍可自选版本安装/切换、配置 npm 源）
+# admin variant marker: when /app/.admin-mode exists in the image, entrypoint.sh switches to the manager service
+# (latest DSH preinstalled; the admin console can still install/switch versions and configure the npm registry)
 RUN if [ "$DEV_TOOLS" = "admin" ]; then touch /app/.admin-mode; fi
 
-# ── 开发工具（按 DEV_TOOLS 前缀从 .build-variants 读取工具列表安装）──
-# .build-variants 每行：<tag前缀>|<apt 工具列表>|<npm 全局包列表（可空）>|<uv 安装标记（1=装/空=不装）>，DEV_TOOLS 取第一列前缀值
-# 基础镜像（DEV_TOOLS=none）不装任何工具
+# ── Dev tools (tool list read from .build-variants by DEV_TOOLS prefix and installed) ──
+# Each .build-variants line: <tag prefix>|<apt tool list>|<npm global package list (may be empty)>|<uv install flag (1=install/empty=skip)>; DEV_TOOLS takes the prefix value from column 1
+# The base image (DEV_TOOLS=none) installs no tools
 COPY .build-variants /app/.build-variants
 RUN if [ -n "$DEV_TOOLS" ] && [ "$DEV_TOOLS" != "none" ]; then \
       PACKAGES="$(awk -F'|' -v p="$DEV_TOOLS" '$1==p {print $2}' /app/.build-variants)"; \
@@ -86,12 +86,39 @@ RUN if [ -n "$DEV_TOOLS" ] && [ "$DEV_TOOLS" != "none" ]; then \
       fi; \
     fi
 
-# ── 特殊测试 tag（DEV_TOOLS=test）：DSH 安装完毕后额外安装插件 ────────
+# ── Special test tag (DEV_TOOLS=test): install extra plugins after DSH is installed ────────
 RUN if [ "$DEV_TOOLS" = "test" ]; then \
       dsh plugin --profile web add github:smanx/dsh-fixed-providers#master; \
     fi
 
-# 对外端口：代理/管理服务默认均监听 3080（DSH 在容器内监听 127.0.0.1:<DSH_PORT>，不直接暴露）
+# Tools for docker install
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# Add Docker's official GPG key and repository
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && chmod a+r /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+    > /etc/apt/sources.list.d/docker.list
+
+# Install only the Docker CLI
+RUN apt-get update && apt-get install -y \
+    docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/*
+
+#add node to docker groups
+#ARG DOCKER_GID=138
+#RUN groupadd -g ${DOCKER_GID} docker
+#RUN usermod -aG docker node
+
+
+# Exposed port: the proxy/manager both listen on 3080 by default (DSH listens on 127.0.0.1:<DSH_PORT> inside the container and is not exposed directly)
 EXPOSE 3080
 
 ENTRYPOINT ["/app/entrypoint.sh"]

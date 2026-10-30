@@ -2,7 +2,7 @@
   "name": "deepseek-harness-admin",
   "version": "1.0.0",
   "private": true,
-  "description": "DSH 管理服务（admin 变体）：页面安装/切换 DSH 版本、配置 npm 源、托管 DSH 进程并反向代理",
+  "description": "DSH management service (admin variant): install/switch DSH versions from the page, configure the npm registry, host the DSH process and reverse-proxy it",
   "main": "index.js",
   "dependencies": {
     "http-proxy": "^1.18.1"

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// deepseek-harness 管理服务（admin 变体入口）
+// deepseek-harness management service (admin variant entrypoint)
 //
-// 职责：
-//   1. 服务管理员页面（/__admin/）与 API：选择/安装/切换 DSH 版本、配置 npm 源；
-//   2. 托管 DSH 进程（启动/停止/重启/等待就绪）；
-//   3. 对 DSH Web UI 做反向代理（复用旧代理的 polyfill / loopback / Origin / Basic Auth / WS 逻辑）；
-//   4. 未安装或 DSH 未运行时，访问 / 自动跳转到管理员页。
+// Responsibilities:
+//   1. Serve the admin page (/__admin/) and its API: select/install/switch DSH versions, configure the npm registry;
+//   2. Host the DSH process (start/stop/restart/wait for ready);
+//   3. Reverse-proxy the DSH Web UI (reuses the old proxy's polyfill / loopback / Origin / Basic Auth / WS logic);
+//   4. When DSH is not installed or not running, visiting / redirects automatically to the admin page.
 //
-// 数据持久化约定：
-//   - DSH 安装到 INSTALL_DIR（建议挂载命名卷，如 dsh-install:/opt/dsh），已装版本与状态文件都在卷上，
-//     容器重建后无需重装，管理服务启动时自动识别并拉起 DSH；
-//   - DSH 自身配置/会话仍在 ~/.dsh（建议挂载 dsh-data:/root/.dsh）。
+// Data persistence conventions:
+//   - DSH installs into INSTALL_DIR (a named volume mount is recommended, e.g. dsh-install:/opt/dsh); the installed version and state file live on the volume,
+//     so no reinstall is needed after the container is rebuilt and the management service detects and starts DSH automatically on launch;
+//   - DSH's own config/sessions still live in ~/.dsh (mounting dsh-data:/root/.dsh is recommended).
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -20,32 +20,32 @@ const crypto = require('crypto');
 const { serveIndex, injectIntoHead } = require('../proxy/upstream-token.js');
 const { attachBodyTransform } = require('../proxy/compression.js');
 
-// ── 端口与环境 ────────────────────────────────────────────────
+// ── Ports and environment ────────────────────────────────────────────────
 const DSH_PORT = Number(process.env.DSH_PORT) || 3079;
 const LISTEN_PORT = Number(process.env.PROXY_PORT) || 3080;
 const TARGET_ORIGIN = `http://127.0.0.1:${DSH_PORT}`;
-const DSH_WEB_LOG = process.env.DSH_WEB_LOG || '/app/.dsh-web.log'; // DSH 运行日志落盘，供 launch-token 打捞
+const DSH_WEB_LOG = process.env.DSH_WEB_LOG || '/app/.dsh-web.log'; // DSH runtime log written to disk, used for launch-token retrieval
 
-// DSH 安装目录（应挂载持久卷 dsh-install:/opt/dsh）
+// DSH install directory (should mount a persistent volume dsh-install:/opt/dsh)
 const INSTALL_DIR = process.env.DSH_INSTALL_DIR || '/opt/dsh';
 const DSH_BIN = path.join(INSTALL_DIR, 'bin', 'dsh');
 const DSH_PKG_JSON = path.join(INSTALL_DIR, 'lib', 'node_modules', '@deepseek-ai', 'dsh', 'package.json');
 const MANAGER_DIR = path.join(INSTALL_DIR, 'manager');
 const STATE_FILE = path.join(MANAGER_DIR, 'state.json');
 
-// npm 源：默认值（容器启动环境变量 NPM_CONFIG_REGISTRY 可覆盖）+ 管理员页面保存值（优先级最高）
+// npm registry: default value (can be overridden by the NPM_CONFIG_REGISTRY env var at container start) + value saved on the admin page (highest priority)
 const DEFAULT_REGISTRY = process.env.NPM_CONFIG_REGISTRY || 'https://registry.npmjs.org/';
 
-// Windows 本地调试时 npm 是 npm.cmd；Linux 容器内是 npm
+// When debugging locally on Windows npm is npm.cmd; inside the Linux container it is npm
 const NPM_CMD = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-// Basic Auth（与旧代理一致：两个都设置才启用）
+// Basic Auth (same as the old proxy: enabled only when both are set)
 const AUTH_USER = process.env.PROXY_USERNAME || '';
 const AUTH_PASS = process.env.PROXY_PASSWORD || '';
 const AUTH_REALM = 'dsh-admin';
 const PUBLIC_PATHS = new Set(['/manifest.webmanifest', '/favicon.svg', '/favicon.ico']);
 
-// ── 状态（含 npm 源配置）─────────────────────────────────────
+// ── State (incl. npm registry config) ──────────────────────────────────────
 let state = loadState();
 function loadState() {
   try {
@@ -59,7 +59,7 @@ function saveState() {
     fs.mkdirSync(MANAGER_DIR, { recursive: true });
     fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   } catch (e) {
-    console.error('[manager] 保存状态失败:', e.message);
+    console.error('[manager] Failed to save state:', e.message);
   }
 }
 function effectiveRegistry() {
@@ -73,7 +73,7 @@ function registryInfo() {
   };
 }
 
-// ── 基础工具 ──────────────────────────────────────────────────
+// ── Basic utilities ──────────────────────────────────────────────────
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
@@ -88,42 +88,42 @@ function actualVersion() {
   }
 }
 
-// ── DSH 进程管理 ─────────────────────────────────────────────
+// ── DSH process management ─────────────────────────────────────────────
 let dshProc = null;
 let dshReady = false;
 
 function bootDsh() {
   return new Promise(resolve => {
     if (dshProc) return resolve({ ok: true });
-    if (!isDshInstalled()) return resolve({ ok: false, reason: '未安装 DSH' });
+    if (!isDshInstalled()) return resolve({ ok: false, reason: 'DSH not installed' });
     dshReady = false;
     const env = {
       ...process.env,
       PATH: `${path.join(INSTALL_DIR, 'bin')}:${process.env.PATH || ''}`,
       NPM_CONFIG_REGISTRY: effectiveRegistry(),
     };
-    console.log(`[manager] 启动 DSH: ${DSH_BIN} web --port ${DSH_PORT}`);
+    console.log(`[manager] Starting DSH: ${DSH_BIN} web --port ${DSH_PORT}`);
     const p = spawn(DSH_BIN, ['web', '--port', String(DSH_PORT)], { env, stdio: 'pipe' });
     dshProc = p;
-    // DSH 运行日志：同一份内容同时写容器输出（可见）与 DSH_WEB_LOG 落盘（供 launch-token 打捞）
+    // DSH runtime log: the same content goes to container output (visible) and to DSH_WEB_LOG on disk (for launch-token retrieval)
     const logStream = fs.createWriteStream(DSH_WEB_LOG, { flags: 'a' });
     p.stdout.on('data', d => { logStream.write(d); process.stdout.write(`[dsh] ${d}`); });
     p.stderr.on('data', d => { logStream.write(d); process.stderr.write(`[dsh] ${d}`); });
     p.on('error', err => {
-      console.error('[manager] DSH 启动失败:', err.message);
+      console.error('[manager] DSH failed to start:', err.message);
       dshProc = null;
       dshReady = false;
       resolve({ ok: false, reason: err.message });
     });
     p.on('exit', (code, sig) => {
-      console.log(`[manager] DSH 已退出 (code=${code}, sig=${sig})`);
+      console.log(`[manager] DSH exited (code=${code}, sig=${sig})`);
       if (dshProc === p) dshProc = null;
       dshReady = false;
       try { logStream.end(); } catch {}
     });
     waitDshReady().then(ok => {
       dshReady = ok;
-      console.log(ok ? '[manager] DSH 就绪' : '[manager] DSH 120 秒内未就绪');
+      console.log(ok ? '[manager] DSH ready' : '[manager] DSH not ready within 120 seconds');
       resolve({ ok });
     });
   });
@@ -159,7 +159,7 @@ async function waitDshReady(timeoutMs = 120000) {
   return false;
 }
 
-// ── 安装（流式日志 → SSE）────────────────────────────────────
+// ── Install (streaming log → SSE) ────────────────────────────────────
 let installing = false;
 let installMeta = { running: false, version: null, ok: null, done: false };
 const sseClients = new Set();
@@ -171,7 +171,7 @@ function broadcast(event, data) {
   }
 }
 
-// 管理性日志：同一条内容同时进 SSE（前端）与容器日志（docker logs）
+// Management log: the same line goes to SSE (frontend) and to container logs (docker logs)
 function emitLog(line) {
   broadcast('log', { line });
   process.stdout.write(`[manager-cmd] ${line}\n`);
@@ -191,7 +191,7 @@ function runCmd(cmd, args, env, onLine) {
         const line = buf.slice(0, i).replace(/\r$/, '');
         buf = buf.slice(i + 1);
         if (line.trim()) {
-          process.stdout.write(`[manager-cmd] ${line}\n`); // 同时进容器日志
+          process.stdout.write(`[manager-cmd] ${line}\n`); // also to container log
           onLine(line);
         }
       }
@@ -199,21 +199,21 @@ function runCmd(cmd, args, env, onLine) {
     child.stdout.on('data', push);
     child.stderr.on('data', push);
     child.on('error', reject);
-    // 用 exit 而非 close：npm 会派生 node-gyp/make 等子进程并可能继承管道，
-    // 导致 close 在命令真正结束后一直不触发（表现为安装任务卡在"安装中"）
+    // Use exit instead of close: npm spawns child processes such as node-gyp/make that may inherit the pipes,
+    // so close may never fire after the command actually finishes (the install task would hang in "installing")
     child.on('exit', (code, sig) => {
       if (buf.trim()) {
-        process.stdout.write(`[manager-cmd] ${buf.trim()}\n`); // 同时进容器日志
+        process.stdout.write(`[manager-cmd] ${buf.trim()}\n`); // also to container log
         onLine(buf);
       }
       if (code === 0) resolve();
-      else reject(new Error(`命令退出码 ${code == null ? '信号 ' + sig : code}`));
+      else reject(new Error(`Command exit code ${code == null ? 'signal ' + sig : code}`));
     });
   });
 }
 
 async function installDsh(version, registry) {
-  if (installing) return { ok: false, reason: '已有安装任务进行中' };
+  if (installing) return { ok: false, reason: 'An install task is already running' };
   installing = true;
   installMeta = { running: true, version, ok: null, done: false };
   broadcast('start', { version });
@@ -221,35 +221,35 @@ async function installDsh(version, registry) {
   try {
     const args = ['install', '-g', '--prefix', INSTALL_DIR, '--no-audit', '--no-fund', `@deepseek-ai/dsh@${version}`];
     emitLog(`> ${NPM_CMD} ${args.join(' ')}`);
-    emitLog(`> npm 源: ${registry}`);
+    emitLog(`> npm registry: ${registry}`);
     await runCmd(NPM_CMD, args, { ...process.env, NPM_CONFIG_REGISTRY: registry }, line => broadcast('log', { line }));
-    if (!isDshInstalled()) throw new Error('安装完成但未找到 dsh 可执行文件，请确认版本号存在');
+    if (!isDshInstalled()) throw new Error('Install finished but the dsh executable was not found, please confirm the version exists');
     const ver = actualVersion();
     state.installedVersion = ver;
     state.requestedVersion = version;
     state.installedAt = new Date().toISOString();
     saveState();
-    emitLog(`已安装 DSH ${ver}`);
+    emitLog(`Installed DSH ${ver}`);
     ok = true;
   } catch (e) {
-    broadcast('log', { line: `[错误] ${e.message}` });
+    broadcast('log', { line: `[Error] ${e.message}` });
     ok = false;
   }
   installMeta.ok = ok;
   installMeta.done = true;
-  installMeta.running = false; // 复位安装中标志，否则页面顶部状态会一直显示「安装中」
+  installMeta.running = false; // Reset the installing flag, otherwise the page header would keep showing "Installing"
   installing = false;
   broadcast('done', { ok, version: actualVersion() });
   if (ok) {
-    // 必须先停掉旧进程再启动：bootDsh 有 dshProc 就会直接返回，
-    // 否则运行中的仍是旧版本 DSH
+    // The old process must be stopped before starting: bootDsh returns immediately if dshProc exists,
+    // otherwise the running process would still be the old DSH version
     const r = await restartDsh();
     broadcast('boot', { ok: r.ok, reason: r.reason || '' });
   }
   return { ok };
 }
 
-// ── 版本列表（npm view，缓存 5 分钟）──────────────────────────
+// ── Version list (npm view, cached 5 min) ───────────────────────────
 let versionsCache = { key: null, at: 0, data: null };
 async function fetchVersions(force = false) {
   const key = effectiveRegistry();
@@ -270,7 +270,7 @@ async function fetchVersions(force = false) {
   if (tags.status === 0) {
     try { out.distTags = JSON.parse(tags.stdout.trim()); } catch { out.distTags = null; }
   } else {
-    out.error = String(tags.stderr || tags.stdout || 'npm view dist-tags 失败').trim().split('\n').pop();
+    out.error = String(tags.stderr || tags.stdout || 'npm view dist-tags failed').trim().split('\n').pop();
   }
   const versions = runView('versions');
   if (versions.status === 0) {
@@ -279,13 +279,13 @@ async function fetchVersions(force = false) {
       out.list = Array.isArray(arr) ? arr : [];
     } catch { out.list = []; }
   } else if (!out.error) {
-    out.error = String(versions.stderr || versions.stdout || 'npm view versions 失败').trim().split('\n').pop();
+    out.error = String(versions.stderr || versions.stdout || 'npm view versions failed').trim().split('\n').pop();
   }
   if (out.list.length || out.distTags) versionsCache = { key, at: now, data: out };
   return out;
 }
 
-// ── Basic Auth（与旧代理一致）────────────────────────────────
+// ── Basic Auth (same as the old proxy) ────────────────────────────────
 function safeEqual(a, b) {
   const ba = Buffer.from(String(a));
   const bb = Buffer.from(String(b));
@@ -312,11 +312,11 @@ function rejectUpgrade(socket) {
   socket.end(`HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="${AUTH_REALM}"\r\nConnection: close\r\n\r\n`);
 }
 
-// ── 反向代理（复用旧代理逻辑）────────────────────────────────
-// crypto.randomUUID polyfill：局域网 IP 是非安全上下文，DSH 前端依赖该 API 生成 rpcId
+// ── Reverse proxy (reuses the old proxy logic) ────────────────────────
+// crypto.randomUUID polyfill: LAN IPs are a non-secure context, and the DSH frontend relies on this API to generate rpcId
 const POLYFILL = '<script>(function(){try{if(typeof crypto!=="undefined"&&crypto&&typeof crypto.randomUUID!=="function"){crypto.randomUUID=function(){var b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;var h="";for(var i=0;i<16;i++){h+=b[i].toString(16).padStart(2,"0")}return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20)}}}catch(e){}})();</script>';
 const HTML_INJECT = POLYFILL;
-// isLoopbackHostname 恒真改写：局域网访问也能用设置类功能
+// Rewrite isLoopbackHostname to always-true: settings-type features also work over LAN access
 const LOOPBACK_JS_NEEDLE = 'isLoopbackHostname(pageLocation.hostname)';
 const LOOPBACK_JS_REPLACEMENT = 'true';
 
@@ -328,17 +328,17 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
   const isJs = ct.includes('javascript');
   if (!isHtml && !isJs) return;
 
-  // 兼容浏览器/上游的所有压缩形态（gzip / deflate / br，以及不压缩的 identity）：
-  // 缓冲整个响应体 → 按 Content-Encoding 解压成明文 → 完成 HTML/JS 改写 → 再按原编码
-  // 重压回传。这样无论上游是否开启压缩、压缩成哪种格式，下面的改写逻辑都能生效。
-  // （上一版做法是转发时剥离 Accept-Encoding 强制上游返回明文，这里不再依赖该前提）
+  // Support all compression forms from browser/upstream (gzip / deflate / br, plus uncompressed identity):
+  // buffer the whole response body → decompress to plaintext per Content-Encoding → finish the HTML/JS rewrite → recompress
+  // with the original encoding and send back. This way the rewrite logic below works no matter whether the upstream compresses or which format it uses.
+  // (The previous version stripped Accept-Encoding when forwarding to force plaintext from the upstream; that assumption is no longer relied upon)
   attachBodyTransform(res, proxyRes, plain => {
     const text = plain.toString('utf8');
     if (isHtml) {
-      // HTML：注入 polyfill 与「管理」悬浮按钮
+      // HTML: inject the polyfill and the "admin" floating button
       return Buffer.from(injectIntoHead(text, HTML_INJECT));
     }
-    // JS：仅当命中目标判定串时才改写（未命中返回 null → 原样透传，不做无谓重压）
+    // JS: rewrite only when the target needle is hit (return null on a miss → pass through unchanged, no pointless recompression)
     if (text.includes(LOOPBACK_JS_NEEDLE)) {
       return Buffer.from(text.split(LOOPBACK_JS_NEEDLE).join(LOOPBACK_JS_REPLACEMENT));
     }
@@ -347,11 +347,11 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
 });
 function alignOrigin(req) {
   if (req.headers.origin) req.headers.origin = TARGET_ORIGIN;
-  // 注意：不再剥离 Accept-Encoding。上游无论是否压缩（gzip/deflate/br 均可），
-  // proxyRes 的压缩兼容管线都会「解压 → 改写 → 重压」，保留带宽收益。
+  // Note: no longer stripping Accept-Encoding. Whether the upstream compresses (gzip/deflate/br all fine),
+  // the proxyRes compression-compatible pipeline always "decompresses → rewrites → recompresses", preserving the bandwidth benefit.
 }
 
-// ── 管理员页面 ───────────────────────────────────────────────
+// ── Admin page ───────────────────────────────────────────────
 let adminHtmlCache = null;
 function serveAdmin(res) {
   if (!adminHtmlCache) adminHtmlCache = fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf8');
@@ -365,7 +365,7 @@ function readJsonBody(req) {
     req.on('data', d => { body += d; if (body.length > 1e6) req.destroy(); });
     req.on('end', () => {
       if (!body) return resolve({});
-      try { resolve(JSON.parse(body)); } catch (e) { reject(new Error('JSON 解析失败')); }
+      try { resolve(JSON.parse(body)); } catch (e) { reject(new Error('JSON parse failed')); }
     });
     req.on('error', reject);
   });
@@ -400,7 +400,7 @@ async function handleApi(req, res, pathname, u) {
       if (v === '') {
         delete state.registry;
       } else {
-        if (!/^https?:\/\//i.test(v)) return send(400, { ok: false, error: '必须以 http:// 或 https:// 开头的地址' });
+        if (!/^https?:\/\//i.test(v)) return send(400, { ok: false, error: 'Must be an address starting with http:// or https://' });
         v = v.replace(/\/+$/, '');
         state.registry = v;
       }
@@ -410,9 +410,9 @@ async function handleApi(req, res, pathname, u) {
     if (pathname === '/__admin/api/install' && req.method === 'POST') {
       const body = await readJsonBody(req);
       const version = String(body.version || '').trim();
-      if (!version) return send(400, { ok: false, error: '缺少版本号' });
-      if (installing) return send(409, { ok: false, error: '已有安装任务进行中' });
-      installDsh(version, effectiveRegistry()); // 异步执行，进度走 SSE
+      if (!version) return send(400, { ok: false, error: 'Missing version number' });
+      if (installing) return send(409, { ok: false, error: 'An install task is already running' });
+      installDsh(version, effectiveRegistry()); // runs asynchronously, progress goes through SSE
       return send(200, { ok: true, started: true, version });
     }
     if (pathname === '/__admin/api/restart' && req.method === 'POST') {
@@ -431,13 +431,13 @@ async function handleApi(req, res, pathname, u) {
       res.on('close', () => sseClients.delete(res));
       return;
     }
-    return send(404, { ok: false, error: '接口不存在' });
+    return send(404, { ok: false, error: 'Endpoint not found' });
   } catch (e) {
     return send(500, { ok: false, error: e.message });
   }
 }
 
-// ── HTTP 服务 ────────────────────────────────────────────────
+// ── HTTP server ────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url ?? '/', 'http://admin');
   const pathname = u.pathname;
@@ -446,9 +446,9 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/__admin' || pathname === '/__admin/') return serveAdmin(res);
   if (pathname.startsWith('/__admin/api/')) return handleApi(req, res, pathname, u);
 
-  // 其余路径：DSH 就绪则反代，否则跳到管理员页
+  // All other paths: reverse-proxy when DSH is ready, otherwise redirect to the admin page
   if (dshReady) {
-    // 根目录 GET 走 serveIndex：上游(如官方 0.1.2+)返回 401 时携带 launch token 重发一次
+    // Root GET goes through serveIndex: when the upstream (e.g. official 0.1.2+) returns 401, resend once carrying the launch token
     if (req.method === 'GET' && pathname === '/') {
       const handled = await serveIndex(req, res, { origin: TARGET_ORIGIN, transformHtml: html => injectIntoHead(html, HTML_INJECT) });
       if (handled) return;
@@ -471,26 +471,26 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.listen(LISTEN_PORT, '0.0.0.0', () => {
-  console.log(`[manager] 管理服务已启动，监听 0.0.0.0:${LISTEN_PORT}`);
-  console.log(`[manager] 管理员页面: http://<host>:${LISTEN_PORT}/__admin/（未安装 DSH 时访问 / 会自动跳转）`);
-  console.log(`[manager] npm 源: 默认 ${DEFAULT_REGISTRY}${state.registry ? `，页面已配置 ${state.registry}` : ''}`);
+  console.log(`[manager] Management service started, listening on 0.0.0.0:${LISTEN_PORT}`);
+  console.log(`[manager] Admin page: http://<host>:${LISTEN_PORT}/__admin/ (visiting / redirects automatically when DSH is not installed)`);
+  console.log(`[manager] npm registry: default ${DEFAULT_REGISTRY}${state.registry ? `, configured on the page as ${state.registry}` : ''}`);
   if (isDshInstalled()) {
-    // 镜像预装 / 卷上已有 DSH 时，同步版本到状态，保证页面「当前版本」正常显示
+    // When the image has DSH preinstalled / the volume already has DSH, sync the version into state so the page "current version" displays correctly
     if (!state.installedVersion) {
       state.installedVersion = actualVersion();
       state.requestedVersion = state.installedVersion;
       saveState();
     }
-    bootDsh().then(r => console.log(r.ok ? `[manager] DSH ${actualVersion()} 已就绪` : `[manager] DSH 启动失败: ${r.reason}`));
+    bootDsh().then(r => console.log(r.ok ? `[manager] DSH ${actualVersion()} is ready` : `[manager] DSH failed to start: ${r.reason}`));
   } else {
-    console.log('[manager] 未检测到已安装的 DSH，请打开管理员页选择版本安装');
+    console.log('[manager] No installed DSH detected, open the admin page to select a version to install');
   }
 });
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 async function shutdown() {
-  console.log('[manager] 收到退出信号，停止 DSH ...');
+  console.log('[manager] Received shutdown signal, stopping DSH ...');
   await stopDsh();
   process.exit(0);
 }

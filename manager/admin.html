@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DSH 管理台</title>
+<title>DSH Admin</title>
 <style>
   :root{
     --bg:#f4f6fb; --panel:#ffffff; --panel2:#f8fafc; --line:#e5e9f2;
@@ -22,7 +22,7 @@
     padding:32px 20px 48px;-webkit-font-smoothing:antialiased;
   }
   .wrap{max-width:900px;margin:0 auto}
-  /* 头部 */
+  /* Header */
   .head{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}
   .brand{display:flex;align-items:center;gap:12px;min-width:0}
   .brand-mark{
@@ -33,30 +33,24 @@
   }
   .head-txt h1{font-size:20px;font-weight:700;letter-spacing:-.01em;margin-bottom:2px}
   .head-txt .sub{color:var(--mut);font-size:13px}
-  #btnLang{
-    flex-shrink:0;background:#fff;border:1px solid var(--line);color:var(--txt);
-    border-radius:999px;padding:7px 18px;font-size:13px;font-weight:600;cursor:pointer;
-    box-shadow:0 1px 2px rgba(16,24,40,.04);transition:border-color .15s ease,color .15s ease;
-  }
-  #btnLang:hover{border-color:var(--acc);color:var(--acc)}
-  /* 卡片 */
+  /* Card */
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;margin-bottom:18px;box-shadow:var(--shadow)}
   .card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
   .card h2{font-size:15px;font-weight:650;letter-spacing:-.01em}
-  /* 状态徽章 */
+  /* Status badge */
   .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 12px;border-radius:999px;font-size:12px;font-weight:600}
   .badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
   .badge.ok{background:var(--ok-bg);color:var(--ok)}
   .badge.warn{background:var(--warn-bg);color:var(--warn)}
   .badge.err{background:var(--err-bg);color:var(--err)}
   .badge.act{background:var(--act-bg);color:var(--act)}
-  /* 状态统计网格 */
+  /* Status stats grid */
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
   .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
   .stat-label{font-size:12px;color:var(--mut);margin-bottom:6px}
   .stat-value{font-size:15px;font-weight:600;word-break:break-all}
   .card-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
-  /* 表单 */
+  /* Form */
   label{color:var(--mut);font-size:13px}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   input[type=text],select{
@@ -65,7 +59,7 @@
     transition:border-color .15s ease,box-shadow .15s ease;
   }
   input[type=text]:focus,select:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
-  /* 按钮 */
+  /* Buttons */
   button{
     background:var(--acc);border:none;color:#fff;border-radius:10px;padding:9px 18px;
     font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .15s ease;
@@ -78,14 +72,14 @@
   button.danger:hover{background:#fbd5d5}
   .hint{font-size:12px;color:var(--mut);margin-top:8px;line-height:1.7}
   .hint code{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;color:var(--txt)}
-  /* 日志 */
+  /* Log */
   .log{
     background:#0f1524;border:1px solid #1c2537;border-radius:12px;padding:12px 14px;
     font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,Menlo,monospace;color:#b8c7e0;
     height:260px;overflow:auto;white-space:pre-wrap;word-break:break-all;
   }
   .log .err{color:var(--err)}
-  /* 其他 */
+  /* Misc */
   a.back{color:var(--acc);text-decoration:none;font-weight:600}
   a.back:hover{text-decoration:underline}
   .mt{margin-top:12px}
@@ -104,66 +98,65 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
       </div>
       <div class="head-txt">
-        <h1 data-i18n="title">DeepSeek Harness 管理台</h1>
-        <div class="sub" data-i18n="sub">管理员变体镜像 · 在此选择/切换 DSH 版本、配置 npm 源并管理 DSH 进程</div>
+        <h1 data-i18n="title">DeepSeek Harness Admin</h1>
+        <div class="sub" data-i18n="sub">Admin variant image · Select/switch DSH version, configure npm registry and manage DSH process</div>
       </div>
     </div>
-    <button id="btnLang" type="button">EN</button>
   </div>
 
   <div class="card">
     <div class="card-head">
-      <h2 data-i18n="stTitle">运行状态</h2>
-      <span id="stBadge" class="badge warn" data-i18n="stChecking">检测中</span>
+      <h2 data-i18n="stTitle">Runtime Status</h2>
+      <span id="stBadge" class="badge warn" data-i18n="stChecking">Checking</span>
     </div>
     <div class="stats">
       <div class="stat">
-        <div class="stat-label" data-i18n="stLabelCur">当前版本</div>
+        <div class="stat-label" data-i18n="stLabelCur">Current version</div>
         <div class="stat-value"><span id="stActual">-</span> <span id="stRequested" class="tag"></span></div>
       </div>
       <div class="stat">
-        <div class="stat-label" data-i18n="stLabelTime">安装时间</div>
+        <div class="stat-label" data-i18n="stLabelTime">Installed at</div>
         <div class="stat-value" id="stInstalledAt">-</div>
       </div>
       <div class="stat">
-        <div class="stat-label" data-i18n="stLabelRun">运行状态</div>
+        <div class="stat-label" data-i18n="stLabelRun">Status</div>
         <div class="stat-value" id="stRunning">-</div>
       </div>
       <div class="stat">
-        <div class="stat-label" data-i18n="stLabelUi">DSH 界面</div>
-        <div class="stat-value"><a class="back" href="/" id="linkDash" data-i18n="stOpenUi">打开 DSH 界面 ↗</a></div>
+        <div class="stat-label" data-i18n="stLabelUi">DSH UI</div>
+        <div class="stat-value"><a class="back" href="/" id="linkDash" data-i18n="stOpenUi">Open DSH UI ↗</a></div>
       </div>
     </div>
     <div class="card-actions">
-      <button id="btnRestart" class="ghost" data-i18n="btnRestart">重启 DSH</button>
-      <button id="btnRefresh" class="ghost" data-i18n="btnRefresh">刷新状态</button>
+      <button id="btnRestart" class="ghost" data-i18n="btnRestart">Restart DSH</button>
+      <button id="btnRefresh" class="ghost" data-i18n="btnRefresh">Refresh</button>
     </div>
   </div>
 
   <div class="card">
-    <div class="card-head"><h2 data-i18n="regTitle">npm 源（NPM_CONFIG_REGISTRY）</h2></div>
+    <div class="card-head"><h2 data-i18n="regTitle">npm registry (NPM_CONFIG_REGISTRY)</h2></div>
     <div class="row">
-      <input type="text" id="regInput" placeholder="加载中..." spellcheck="false" autocomplete="off" data-i18n-ph="regPlaceholder">
-      <button id="btnRegUseDef" data-i18n="btnRegUseDef">使用默认值</button>
-      <button id="btnRegSave" data-i18n="btnRegSave">保存</button>
+      <input type="text" id="regInput" placeholder="Loading..." spellcheck="false" autocomplete="off" data-i18n-ph="regPlaceholder">
+      <button id="btnRegUseDef" data-i18n="btnRegUseDef">Use default</button>
+      <button id="btnRegSave" data-i18n="btnRegSave">Save</button>
     </div>
-    <div class="hint" id="regHint" data-i18n="regHintLoading">加载中...</div>
+    <div class="hint" id="regHint" data-i18n="regHintLoading">Loading...</div>
   </div>
 
   <div class="card">
-    <div class="card-head"><h2 data-i18n="verTitle">DSH 版本</h2></div>
+    <div class="card-head"><h2 data-i18n="verTitle">DSH Version</h2></div>
     <div class="row">
-      <select id="verSelect"><option data-i18n="verLoading">加载版本列表中...</option></select>
-      <button id="btnInstall" data-i18n="btnInstall">安装 / 切换版本</button>
-      <button id="btnRefreshVer" class="ghost" data-i18n="btnRefreshVer">刷新列表</button>
+      <select id="verSelect"><option data-i18n="verLoading">Loading versions...</option></select>
+      <button id="btnInstall" data-i18n="btnInstall">Install / Switch</button>
+      <button id="btnRefreshVer" class="ghost" data-i18n="btnRefreshVer">Refresh list</button>
     </div>
-    <div class="hint" data-i18n="verHint">安装或切换后会自动启动 DSH。</div>
+    <div class="hint" data-i18n="verHint">DSH will start automatically after install or switch.</div>
   </div>
 
   <div class="card">
     <div class="card-head">
-      <h2 data-i18n="logTitle">安装日志（实时）</h2>
-      <button id="btnClearLog" class="ghost" data-i18n="btnClearLog">清空</button>
+      <h2 data-i18n="logTitle">Install log (live)</h2>
+      <button id="btnClearLog" class="ghost" data-i18n="btnClearLog">Clear</button>
     </div>
     <div class="log" id="log"></div>
   </div>
@@ -173,37 +166,9 @@
 (function(){
   var $ = function(id){ return document.getElementById(id); };
 
-  // ── 中英文翻译 ─────────────────────────────────────────────
-  var LANGS = {
-    zh: {
-      title: 'DeepSeek Harness 管理台',
-      sub: '管理员变体镜像 · 在此选择/切换 DSH 版本、配置 npm 源并管理 DSH 进程',
-      stTitle: '运行状态', stChecking: '检测中',
-      stLabelCur: '当前版本', stLabelTime: '安装时间', stLabelRun: '运行状态', stLabelUi: 'DSH 界面', stOpenUi: '打开 DSH 界面 ↗',
-      btnRestart: '重启 DSH', btnRefresh: '刷新状态',
-      regTitle: 'npm 源（NPM_CONFIG_REGISTRY）', regPlaceholder: '加载中...', btnRegUseDef: '使用默认值', btnRegSave: '保存',
-      regHintLoading: '加载中...',
-      verTitle: 'DSH 版本', verLoading: '加载版本列表中...', btnInstall: '安装 / 切换版本', btnRefreshVer: '刷新列表', verHint: '安装或切换后会自动启动 DSH。',
-      logTitle: '安装日志（实时）', btnClearLog: '清空',
-      badgeInstalling: '安装中', badgeRunning: '运行中', badgeNotRun: '未运行', badgeNotInstalled: '未安装',
-      stSelectedPrefix: '已选 ', runYes: '运行中', runNo: '已停止',
-      allVersions: '全部版本', noVersions: '（无可用版本）',
-      errTag: '[错误]', warnTag: '[警告]',
-      logConnecting: '连接管理服务...',
-      regHintDefault: '默认值：', regHintLast: ' ｜ 上次配置：', regHintEff: ' ｜ 当前生效：',
-      regHintPriority: '优先级：页面配置 > 环境变量 NPM_CONFIG_REGISTRY > 默认值。',
-      regHintNote: '保存后仅对后续安装/版本列表生效，不会改动已安装的 DSH。',
-      regSaved: '已保存 npm 源：{v}', useDefaultLabel: '（使用默认值）', errSave: '[错误] 保存失败: {e}',
-      warnVersions: '[警告] 获取版本列表失败: {e}',
-      logRefreshStart: '刷新版本列表...', logRefreshDone: '版本列表已刷新（{n} 个版本）',
-      warnSelectFirst: '[警告] 请先选择版本', logInstallSubmit: '已提交安装任务：{v}（实时日志见下方）',
-      errRefresh: '[错误] 刷新状态失败: {e}',
-      restartDone: 'DSH 已重启', restartFail: '重启失败: {r}',
-      sseStart: '开始安装 DSH {v} ...', sseDone: '安装完成，当前版本：{v}', sseDoneFail: '安装失败',
-      sseBootOk: 'DSH 已启动', sseBootFail: 'DSH 启动失败: {r}'
-    },
-    en: {
-      title: 'DeepSeek Harness Admin',
+  // ── UI strings ───────────────────────────────────────────────────────
+  var STRINGS = {
+    title: 'DeepSeek Harness Admin',
       sub: 'Admin variant image · Select/switch DSH version, configure npm registry and manage DSH process',
       stTitle: 'Runtime Status', stChecking: 'Checking',
       stLabelCur: 'Current version', stLabelTime: 'Installed at', stLabelRun: 'Status', stLabelUi: 'DSH UI', stOpenUi: 'Open DSH UI ↗',
@@ -217,7 +182,7 @@
       allVersions: 'All versions', noVersions: '(no available versions)',
       errTag: '[Error]', warnTag: '[Warning]',
       logConnecting: 'Connecting to management service...',
-      regHintDefault: 'Default: ', regHintLast: ' ｜ Last saved: ', regHintEff: ' ｜ Effective: ',
+      regHintDefault: 'Default: ', regHintLast: ' | Last saved: ', regHintEff: ' | Effective: ',
       regHintPriority: 'Priority: page config > env var NPM_CONFIG_REGISTRY > default.',
       regHintNote: 'Saving only affects future installs/version list; installed DSH is not modified.',
       regSaved: 'npm registry saved: {v}', useDefaultLabel: '(using default)', errSave: '[Error] Save failed: {e}',
@@ -228,15 +193,13 @@
       restartDone: 'DSH restarted', restartFail: 'Restart failed: {r}',
       sseStart: 'Start installing DSH {v} ...', sseDone: 'Install complete, current version: {v}', sseDoneFail: 'Install failed',
       sseBootOk: 'DSH started', sseBootFail: 'DSH failed to start: {r}'
-    }
   };
 
-  var T = LANGS.zh;
-  var lang = 'zh';
+  var T = STRINGS;
   var lastState = null;
 
   function t(key, params){
-    var s = (T && T[key] != null) ? T[key] : (LANGS.zh[key] != null ? LANGS.zh[key] : key);
+    var s = (T[key] != null) ? T[key] : key;
     if (params) {
       Object.keys(params).forEach(function(k){
         s = s.split('{' + k + '}').join(params[k]);
@@ -245,33 +208,16 @@
     return s;
   }
 
-  function applyLang(l){
-    lang = (l === 'en') ? 'en' : 'zh';
-    T = LANGS[lang];
-    try { localStorage.setItem('dshLang', lang); } catch(e){}
-    document.documentElement.lang = lang;
+  function applyStrings(){
     document.title = t('title');
-    $('btnLang').textContent = lang === 'zh' ? 'EN' : '中文';
-    $('btnLang').title = lang === 'zh' ? 'Switch to English' : '切换到中文';
     var els = document.querySelectorAll('[data-i18n]');
     for (var i = 0; i < els.length; i++) els[i].textContent = t(els[i].getAttribute('data-i18n'));
     var phs = document.querySelectorAll('[data-i18n-ph]');
     for (var j = 0; j < phs.length; j++) phs[j].placeholder = t(phs[j].getAttribute('data-i18n-ph'));
-    if (lastState) renderState(lastState);
   }
-  $('btnLang').addEventListener('click', function(){ applyLang(lang === 'zh' ? 'en' : 'zh'); });
+  applyStrings();
 
-  // 语言初始化（需在首次输出日志前执行）
-  var initLang = 'zh';
-  try {
-    var saved = localStorage.getItem('dshLang');
-    if (saved === 'en' || saved === 'zh') initLang = saved;
-    else if ((navigator.language || 'en').toLowerCase().indexOf('zh') >= 0) initLang = 'zh';
-    else initLang = 'en';
-  } catch(e){}
-  applyLang(initLang);
-
-  // ── 工具函数 ────────────────────────────────────────────────
+  // ── Utility functions ────────────────────────────────────────────────
   var log = function(line, cls){
     var el = $('log');
     var d = document.createElement('div');
@@ -282,7 +228,7 @@
   };
   log(t('logConnecting'));
 
-  // ── registry 配置 ─────────────────────────────────────────
+  // ── registry configuration ─────────────────────────────────────────
   var lastSaved = null;
   function renderRegistry(r){
     if (!r) return;
@@ -293,7 +239,7 @@
       t('regHintDefault') + '<code>' + (r.default||'') + '</code>' +
       (r.saved ? t('regHintLast') + '<code>' + r.saved + '</code>' : '') +
       t('regHintEff') + '<code>' + (r.effective||'') + '</code>' +
-      ' ｜ ' + t('regHintPriority') + ' ' + t('regHintNote');
+      ' | ' + t('regHintPriority') + ' ' + t('regHintNote');
     lastSaved = r.saved;
   }
   $('btnRegUseDef').addEventListener('click', function(){
@@ -315,7 +261,7 @@
     } catch(e){ log(t('errSave', { e: e.message }), 'err'); }
   });
 
-  // ── 版本列表 ──────────────────────────────────────────────
+  // ── Version list ──────────────────────────────────────────────
   var ALL_VERSIONS = [];
   function renderVersions(v){
     var sel = $('verSelect');
@@ -323,12 +269,12 @@
     if (v.error) log(t('warnVersions', { e: v.error }), 'err');
     var tags = v.distTags || {};
     var list = v.list || [];
-    // 标签优先展示
+    // Show dist-tags first
     var seen = {};
     Object.keys(tags).forEach(function(k){
       if (seen[tags[k]]) return; seen[tags[k]] = 1;
       var o = document.createElement('option');
-      o.value = tags[k]; o.textContent = k + (lang === 'zh' ? '（' + tags[k] + '）' : ' (' + tags[k] + ')');
+      o.value = tags[k]; o.textContent = k + (lang === 'zh' ? ' (' + tags[k] + ')' : ' (' + tags[k] + ')');
       sel.appendChild(o);
     });
     if (list.length) {
@@ -347,7 +293,7 @@
       o.value = ''; o.textContent = t('noVersions');
       sel.appendChild(o);
     }
-    // 默认选中当前安装版本
+    // Default to the currently installed version
     var cur = ALL_VERSIONS.__cur;
     if (cur) { sel.value = cur; }
   }
@@ -373,7 +319,7 @@
     finally { $('btnInstall').disabled = false; }
   });
 
-  // ── 状态刷新 ──────────────────────────────────────────────
+  // ── Status refresh ──────────────────────────────────────────────
   function renderState(s){
     if (!s) return;
     lastState = s;
@@ -412,11 +358,11 @@
   });
   $('btnClearLog').addEventListener('click', function(){ $('log').innerHTML=''; });
 
-  // ── SSE 实时日志 ──────────────────────────────────────────
+  // ── SSE live log ──────────────────────────────────────────
   if (window.EventSource) {
     var es = new EventSource('/__admin/api/events');
     es.addEventListener('start', function(ev){ var d=JSON.parse(ev.data); log(t('sseStart', { v: d.version })); });
-    es.addEventListener('log', function(ev){ var d=JSON.parse(ev.data); log(d.line, /错误|ERR/i.test(d.line)?'err':''); });
+    es.addEventListener('log', function(ev){ var d=JSON.parse(ev.data); log(d.line, /ERR/i.test(d.line)?'err':''); });
     es.addEventListener('done', function(ev){
       var d=JSON.parse(ev.data);
       log(d.ok ? t('sseDone', { v: d.version }) : t('errTag') + ' ' + t('sseDoneFail'), d.ok?'':'err');
@@ -427,10 +373,10 @@
       log(d.ok ? t('sseBootOk') : t('errTag') + ' ' + t('sseBootFail', { r: d.reason }), d.ok?'':'err');
       refresh();
     });
-    es.onerror = function(){ /* 连接断开自动重连 */ };
+    es.onerror = function(){ /* auto-reconnect on disconnect */ };
   }
 
-  // 初始加载
+  // Initial load
   refresh();
 })();
 </script>
